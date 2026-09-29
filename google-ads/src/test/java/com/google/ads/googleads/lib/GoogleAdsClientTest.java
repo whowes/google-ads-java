@@ -798,6 +798,38 @@ public class GoogleAdsClientTest {
         localChannelProvider.isHeaderSent("login-customer-id", Pattern.compile(".*")));
   }
 
+  /**
+   * Verifies that the Ads headers and endpoint are also set on each service's settings, so that
+   * transports derived from the settings rather than the gRPC channel provider (e.g. the HTTP/JSON
+   * transport used for resumable uploads) receive them.
+   */
+  @Test
+  public void serviceSettings_includeHeadersAndEndpoint() throws IOException {
+    GoogleAdsClient client =
+        GoogleAdsClient.newBuilder()
+            .setCredentials(fakeCredentials)
+            .setDeveloperToken(DEVELOPER_TOKEN)
+            .setLoginCustomerId(LOGIN_CUSTOMER_ID)
+            .setLinkedCustomerId(LINKED_CUSTOMER_ID)
+            .setTransportChannelProvider(localChannelProvider)
+            .setEndpoint("custom-endpoint.example.com:443")
+            .build();
+    try (GoogleAdsServiceClient googleAdsServiceClient =
+        client.getLatestVersion().createGoogleAdsServiceClient()) {
+      Map<String, String> headers =
+          googleAdsServiceClient.getSettings().getHeaderProvider().getHeaders();
+      assertEquals(DEVELOPER_TOKEN, headers.get("developer-token"));
+      assertEquals(String.valueOf(LOGIN_CUSTOMER_ID), headers.get("login-customer-id"));
+      assertEquals(String.valueOf(LINKED_CUSTOMER_ID), headers.get("linked-customer-id"));
+      // GAX rejects settings headers that override x-goog-api-client, and adds its own instead.
+      assertFalse(
+          "x-goog-api-client must not be set on the settings headers",
+          headers.containsKey(ApiClientHeaderProvider.getDefaultApiClientHeaderKey()));
+      assertEquals(
+          "custom-endpoint.example.com:443", googleAdsServiceClient.getSettings().getEndpoint());
+    }
+  }
+
   /** Verifies that headers include linkedCustomerId if present. */
   @Test
   public void linkedCustomerId_sentIfSpecified() {

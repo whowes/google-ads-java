@@ -17,8 +17,10 @@ package com.google.ads.googleads.codegen;
 import com.google.ads.googleads.lib.stubs.annotations.ServiceClientDescriptor;
 import com.google.ads.googleads.lib.stubs.annotations.VersionDescriptor;
 import com.google.api.gax.core.FixedCredentialsProvider;
+import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.api.gax.rpc.TransportChannelProvider;
 import com.google.auth.Credentials;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
@@ -28,10 +30,13 @@ import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import javax.lang.model.element.Modifier;
@@ -46,7 +51,7 @@ import javax.lang.model.element.Modifier;
  *
  * <pre>
  *  public GoogleAdsVersion getVersion1() {
- *    return new V1Client(provider, credentials);
+ *    return new V1Client(provider, credentials, headers, endpoint);
  *  }
  *  ...
  *  private static class V1Client implements GoogleAdsVersion {
@@ -63,6 +68,8 @@ public class GeneratedCatalogCodeGenerator implements Generator {
   private static final ClassName VERSION_CLASS_NAME =
       ClassName.get("com.google.ads.googleads.lib.catalog", "Version");
   private static final ClassName IMMUTABLE_SET_CLASS_NAME = ClassName.get(ImmutableSet.class);
+  private static final TypeName HEADERS_TYPE =
+      ParameterizedTypeName.get(Map.class, String.class, String.class);
 
   private final Set<Integer> versions;
   private final int latestVersion;
@@ -163,8 +170,9 @@ public class GeneratedCatalogCodeGenerator implements Generator {
             .addStatement("return getSupportedVersions().first()")
             .build();
 
-    // Creates the createAllVersionsClient method.
-    MethodSpec createAllVersionsClient = createAllVersionsClient(versions, latestVersion);
+    // Creates the createAllVersionsClient methods.
+    List<MethodSpec> createAllVersionsClientMethods =
+        createAllVersionsClient(versions, latestVersion);
 
     // Creates the GeneratedCatalog class.
     TypeSpec.Builder generatedCatalogBuilder =
@@ -178,7 +186,7 @@ public class GeneratedCatalogCodeGenerator implements Generator {
             .addMethod(getDefault)
             .addMethod(getSupportedVersions)
             .addMethod(getLatestVersion)
-            .addMethod(createAllVersionsClient);
+            .addMethods(createAllVersionsClientMethods);
 
     // Generated catalog should implement the ApiCatalog interface.
     // This does not, however, apply to catalogs that are generated during the test-compile phase.
@@ -221,14 +229,30 @@ public class GeneratedCatalogCodeGenerator implements Generator {
             .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
             .build();
 
+    // Creates the headers variable.
+    FieldSpec headers =
+        FieldSpec.builder(HEADERS_TYPE, "headers")
+            .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+            .build();
+
+    // Creates the endpoint variable.
+    FieldSpec endpoint =
+        FieldSpec.builder(String.class, "endpoint")
+            .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+            .build();
+
     // Creates the constructor.
     MethodSpec constructor =
         MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(TransportChannelProvider.class, "provider")
             .addParameter(Credentials.class, "credentials")
+            .addParameter(HEADERS_TYPE, "headers")
+            .addParameter(String.class, "endpoint")
             .addStatement("this.provider = provider")
             .addStatement("this.credentials = credentials")
+            .addStatement("this.headers = headers")
+            .addStatement("this.endpoint = endpoint")
             .build();
 
     // Creates the a class builder for a given version client.
@@ -238,6 +262,8 @@ public class GeneratedCatalogCodeGenerator implements Generator {
             .addSuperinterface(Utils.createServiceClientClassName(version, "GoogleAdsVersion"))
             .addField(provider)
             .addField(credentials)
+            .addField(headers)
+            .addField(endpoint)
             .addMethod(constructor);
 
     // Creates the class name for the given version of GoogleAdsVersion.
@@ -285,23 +311,29 @@ public class GeneratedCatalogCodeGenerator implements Generator {
     String noClientName = serviceClient.substring(0, serviceClient.length() - "client".length());
 
     // Adds code body to the method builder, which creates the settings of a given service client
-    // by setting the credentials and transport provider. This code is contained is a try block
-    // and throws a RuntimeException exception if it fails.
+    // by setting the credentials, transport provider, headers and endpoint. Headers and endpoint
+    // are set on the settings (in addition to the transport provider) so that they also apply to
+    // any transport derived from these settings, e.g. HTTP/JSON for resumable uploads. This code
+    // is contained is a try block and throws a RuntimeException exception if it fails.
     serviceBuilder.addCode(
         ""
             + "try {\n"
-            + "  $T settings =\n"
+            + "  $T.Builder builder =\n"
             + "    $T.newBuilder()\n"
             + "      .setCredentialsProvider($T.create(credentials))\n"
             + "      .setTransportChannelProvider(provider)\n"
-            + "      .build();\n"
-            + "  return $T.create(settings);\n"
+            + "      .setHeaderProvider($T.create(headers));\n"
+            + "  if (endpoint != null) {\n"
+            + "    builder.setEndpoint(endpoint);\n"
+            + "  }\n"
+            + "  return $T.create(builder.build());\n"
             + "} catch ($T e) {\n"
             + "  throw new RuntimeException(e);\n"
             + "}\n",
         Utils.createServiceClientClassName(version, noClientName + "Settings"),
         Utils.createServiceClientClassName(version, noClientName + "Settings"),
         FixedCredentialsProvider.class,
+        FixedHeaderProvider.class,
         Utils.createServiceClientClassName(version, serviceClient),
         IOException.class);
 
@@ -310,13 +342,14 @@ public class GeneratedCatalogCodeGenerator implements Generator {
   }
 
   /**
-   * Creates the createAllVersionsClient method.
+   * Creates the createAllVersionsClient methods.
    *
    * @param versions available versions of the Google Ads library.
    * @param latestVersion the latest available version of the Google Ads library.
-   * @return MethodSpec for the method to be created.
+   * @return MethodSpecs for the methods to be created.
    */
-  private static MethodSpec createAllVersionsClient(Set<Integer> versions, int latestVersion) {
+  private static List<MethodSpec> createAllVersionsClient(
+      Set<Integer> versions, int latestVersion) {
     String googleAdsAllVersionsSimpleName = "GoogleAdsAllVersions";
     ClassName googleAdsAllVersionsClassName =
         ClassName.get("com.google.ads.googleads.lib", googleAdsAllVersionsSimpleName);
@@ -344,14 +377,33 @@ public class GeneratedCatalogCodeGenerator implements Generator {
     // Builds the anonymous class.
     TypeSpec allVersionsClient = allVersionsClientBuilder.build();
 
-    // Returns the createAllVersionsClient method.
-    return MethodSpec.methodBuilder("createAllVersionsClient")
-        .addModifiers(Modifier.PUBLIC)
-        .addStatement("return $L", allVersionsClient)
-        .returns(googleAdsAllVersionsClassName)
-        .addParameter(TransportChannelProvider.class, "provider")
-        .addParameter(Credentials.class, "credentials")
-        .build();
+    // Creates the createAllVersionsClient method which applies the headers and endpoint to each
+    // service's settings.
+    MethodSpec createWithHeadersAndEndpoint =
+        MethodSpec.methodBuilder("createAllVersionsClient")
+            .addModifiers(Modifier.PUBLIC)
+            .addStatement("return $L", allVersionsClient)
+            .returns(googleAdsAllVersionsClassName)
+            .addParameter(TransportChannelProvider.class, "provider")
+            .addParameter(Credentials.class, "credentials")
+            .addParameter(HEADERS_TYPE, "headers")
+            .addParameter(String.class, "endpoint")
+            .build();
+
+    // Creates the legacy createAllVersionsClient method, which relies solely on the transport
+    // channel provider for headers and endpoint.
+    MethodSpec createLegacy =
+        MethodSpec.methodBuilder("createAllVersionsClient")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(googleAdsAllVersionsClassName)
+            .addParameter(TransportChannelProvider.class, "provider")
+            .addParameter(Credentials.class, "credentials")
+            .addStatement(
+                "return createAllVersionsClient(provider, credentials, $T.of(), null)",
+                ImmutableMap.class)
+            .build();
+
+    return ImmutableList.of(createWithHeadersAndEndpoint, createLegacy);
   }
 
   /**
@@ -365,7 +417,8 @@ public class GeneratedCatalogCodeGenerator implements Generator {
         .addAnnotation(Override.class)
         .addModifiers(Modifier.PUBLIC)
         .returns(Utils.createServiceClientClassName(version, "GoogleAdsVersion"))
-        .addStatement("return new V" + version + "Client(provider, credentials)")
+        .addStatement(
+            "return new V" + version + "Client(provider, credentials, headers, endpoint)")
         .build();
   }
 }

@@ -17,8 +17,10 @@ import com.google.ads.googleads.lib.GoogleAdsAllVersions;
 import com.google.ads.googleads.v1.services.GoogleAdsVersion;
 import com.google.api.gax.rpc.TransportChannelProvider;
 import com.google.auth.Credentials;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import java.util.Map;
 import java.util.SortedSet;
 import javax.annotation.Generated;
 
@@ -57,11 +59,11 @@ public class GeneratedCatalog implements ApiCatalog {
   }
 
   public GoogleAdsAllVersions createAllVersionsClient(TransportChannelProvider provider,
-      Credentials credentials) {
+      Credentials credentials, Map<String, String> headers, String endpoint) {
     return new GoogleAdsAllVersions() {
       @Override
       public GoogleAdsVersion getVersion1() {
-        return new V1Client(provider, credentials);
+        return new V1Client(provider, credentials, headers, endpoint);
       }
 
       @Override
@@ -71,14 +73,26 @@ public class GeneratedCatalog implements ApiCatalog {
     };
   }
 
+  public GoogleAdsAllVersions createAllVersionsClient(TransportChannelProvider provider,
+      Credentials credentials) {
+    return createAllVersionsClient(provider, credentials, ImmutableMap.of(), null);
+  }
+
   private static class V1Client implements GoogleAdsVersion {
     private final TransportChannelProvider provider;
 
     private final Credentials credentials;
 
-    public V1Client(TransportChannelProvider provider, Credentials credentials) {
+    private final Map<String, String> headers;
+
+    private final String endpoint;
+
+    public V1Client(TransportChannelProvider provider, Credentials credentials,
+        Map<String, String> headers, String endpoint) {
       this.provider = provider;
       this.credentials = credentials;
+      this.headers = headers;
+      this.endpoint = endpoint;
     }
   }
 }

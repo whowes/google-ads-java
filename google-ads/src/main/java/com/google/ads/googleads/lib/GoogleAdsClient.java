@@ -19,6 +19,7 @@ import com.google.ads.googleads.lib.catalog.Primer;
 import com.google.ads.googleads.lib.logging.LoggingInterceptor;
 import com.google.ads.googleads.lib.logging.RequestLogger;
 import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
+import com.google.api.gax.rpc.ApiClientHeaderProvider;
 import com.google.api.gax.rpc.TransportChannelProvider;
 import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -31,11 +32,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.function.Function;
@@ -683,9 +686,19 @@ public abstract class GoogleAdsClient extends AbstractGoogleAdsClient {
         setDefaultTransportChannelProvider(transportChannelProvider);
       }
 
+      // Headers and endpoint are also passed so they are set on each service's settings. This
+      // ensures transports derived from those settings (e.g. HTTP/JSON for resumable uploads)
+      // receive them, not only the gRPC transport channel provider configured above. The
+      // x-goog-api-client header is excluded since GAX does not allow settings headers to
+      // override it, and adds its own version (with the correct transport token) instead.
+      Map<String, String> settingsHeaders =
+          Maps.filterKeys(
+              getHeaders(),
+              key -> !ApiClientHeaderProvider.getDefaultApiClientHeaderKey().equals(key));
       GoogleAdsAllVersions allVersionsClient =
           ApiCatalog.getDefault()
-              .createAllVersionsClient(getTransportChannelProvider(), getCredentials());
+              .createAllVersionsClient(
+                  getTransportChannelProvider(), getCredentials(), settingsHeaders, getEndpoint());
       setGoogleAdsAllVersions(allVersionsClient);
 
       GoogleAdsClient provider = autoBuild();

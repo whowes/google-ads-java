@@ -17,6 +17,7 @@ package com.google.ads.googleads.lib.catalog;
 import com.google.ads.googleads.lib.GoogleAdsAllVersions;
 import com.google.api.gax.rpc.TransportChannelProvider;
 import com.google.auth.Credentials;
+import java.util.Map;
 import java.util.SortedSet;
 
 /**
@@ -45,4 +46,18 @@ public interface ApiCatalog {
    */
   GoogleAdsAllVersions createAllVersionsClient(
       TransportChannelProvider provider, Credentials credentials);
+
+  /**
+   * Instantiates a new GoogleAdsAllVersions object for the given TransportChannelProvider,
+   * Credentials, headers and endpoint. The headers and endpoint are applied to each service
+   * client's settings (in addition to whatever is configured on the TransportChannelProvider), so
+   * that they are also used by transports derived from those settings, such as the HTTP/JSON
+   * transport used for resumable uploads. A null endpoint leaves the settings' default endpoint
+   * unchanged.
+   */
+  GoogleAdsAllVersions createAllVersionsClient(
+      TransportChannelProvider provider,
+      Credentials credentials,
+      Map<String, String> headers,
+      String endpoint);
 }
